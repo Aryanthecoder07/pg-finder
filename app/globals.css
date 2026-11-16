@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-slate-50 text-slate-900 antialiased; }
+.input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-700 focus:outline-none focus:ring-1 focus:ring-teal-700; }
+.btn { @apply rounded-full bg-teal-800 px-5 py-2 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-50; }
+.btn-ghost { @apply rounded-full border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50; }
+.label { @apply mb-1 block text-sm font-medium text-slate-700; }
