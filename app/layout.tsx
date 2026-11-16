@@ -46,8 +46,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </nav>
         </header>
         <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
-        <footer className="mx-auto max-w-5xl px-4 py-8 text-xs text-slate-500">
-          Reviews are written by residents. Rent and conditions can change, so confirm with the PG before paying.
+             <footer className="mx-auto max-w-5xl px-4 py-8 text-xs text-slate-500">
+          <p>Reviews are written by residents. Rent and conditions can change, so confirm with the PG before paying.</p>
+          <p className="mt-2 space-x-4">
+            <Link href="/privacy" className="underline">Privacy Policy</Link>
+            <Link href="/terms" className="underline">Terms of Service</Link>
+          </p>
         </footer>
       </body>
     </html>
