@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
+import imageCompression from "browser-image-compression";
 
-// Direct browser -> Cloudinary upload using an UNSIGNED preset (no server code needed).
+// Shrinks each photo in the browser, then uploads it straight to Cloudinary (unsigned preset).
 export default function ImageUploader({ urls, onChange }: { urls: string[]; onChange: (u: string[]) => void }) {
   const [busy, setBusy] = useState(false);
   const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
@@ -14,8 +15,20 @@ export default function ImageUploader({ urls, onChange }: { urls: string[]; onCh
     try {
       const added: string[] = [];
       for (const f of Array.from(files).slice(0, 6)) {
+        let file: File = f;
+        try {
+          // Aim for about 500 KB and at most 1600 px on the long side
+          file = await imageCompression(f, {
+            maxSizeMB: 0.5,
+            maxWidthOrHeight: 1600,
+            initialQuality: 0.8,
+            useWebWorker: true,
+          });
+        } catch {
+          // If compression fails (for example an unusual format), upload the original
+        }
         const fd = new FormData();
-        fd.append("file", f);
+        fd.append("file", file, f.name);
         fd.append("upload_preset", preset);
         const res = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, { method: "POST", body: fd });
         const j = await res.json();
@@ -31,7 +44,7 @@ export default function ImageUploader({ urls, onChange }: { urls: string[]; onCh
     <div>
       <span className="label">Photos (rooms, washrooms, food, kitchen)</span>
       <input type="file" accept="image/*" multiple onChange={(e) => upload(e.target.files)} className="text-sm" />
-      {busy && <p className="mt-1 text-xs text-slate-500">Uploading…</p>}
+      {busy && <p className="mt-1 text-xs text-slate-500">Compressing and uploading…</p>}
       <div className="mt-2 flex flex-wrap gap-2">
         {urls.map((u) => (
           // eslint-disable-next-line @next/next/no-img-element

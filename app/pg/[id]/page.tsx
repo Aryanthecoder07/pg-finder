@@ -25,6 +25,9 @@ export default async function PgPage({ params }: { params: Promise<{ id: string 
   const pg: any = await d.collection("pgs").findOne({ _id: new ObjectId(id) }, { projection: { embedding: 0 } });
   if (!pg) notFound();
   const reviews: any[] = await d.collection("reviews").find({ pgId: pg._id }).sort({ createdAt: -1 }).limit(50).toArray();
+    const mine = userId
+    ? await d.collection("reviews").findOne({ pgId: pg._id, userId }, { projection: { _id: 1 } })
+    : null;
   const [lng, lat] = pg.location.coordinates;
 
   return (
@@ -83,7 +86,7 @@ export default async function PgPage({ params }: { params: Promise<{ id: string 
         </div>
       </section>
 
-      <AddReview pgId={id} signedIn={!!userId} />
+     <AddReview pgId={id} signedIn={!!userId} hasReviewed={!!mine} />
 
       <section className="space-y-4">
         <h2 className="font-semibold">Reviews</h2>

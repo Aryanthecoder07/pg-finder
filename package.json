@@ -10,11 +10,12 @@
     "reembed": "node --env-file=.env.local scripts/reembed.mjs"
   },
   "dependencies": {
+    "browser-image-compression": "^2.0.2",
     "mongodb": "^6.12.0",
     "next": "^15.0.0",
+    "next-auth": "^5.0.0-beta.25",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "next-auth": "^5.0.0-beta.25"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

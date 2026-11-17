@@ -1,14 +1,19 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 
-// JWT sessions: no database adapter needed. The Google account id (token.sub) is our user id.
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Google],
   session: { strategy: "jwt" },
-  pages: { signIn: "/signin" }, // use our own sign-in page
+  pages: { signIn: "/signin" },
   callbacks: {
+    jwt({ token, account }) {
+      // `account` exists only at sign-in. Save Google's permanent account id so it is identical on every login.
+      if (account?.providerAccountId) token.uid = `${account.provider}:${account.providerAccountId}`;
+      return token;
+    },
     session({ session, token }) {
-      if (token.sub) (session.user as { id?: string }).id = token.sub;
+      const id = (token.uid as string | undefined) ?? token.sub;
+      if (id) (session.user as { id?: string }).id = id;
       return session;
     },
   },

@@ -5,7 +5,7 @@ import ReviewForm from "./ReviewForm";
 import { emptyReview, validateReview } from "@/lib/types";
 import { getPosition } from "@/lib/geoClient";
 
-export default function AddReview({ pgId, signedIn }: { pgId: string; signedIn: boolean }) {
+export default function AddReview({ pgId, signedIn, hasReviewed }: { pgId: string; signedIn: boolean; hasReviewed: boolean })  {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [review, setReview] = useState(emptyReview());
@@ -18,6 +18,13 @@ export default function AddReview({ pgId, signedIn }: { pgId: string; signedIn: 
       <a className="btn inline-block" href={`/signin?callbackUrl=${encodeURIComponent(`/pg/${pgId}`)}`}>
         Sign in with Google to review
       </a>
+    );
+  }
+    if (hasReviewed) {
+    return (
+      <p className="rounded-lg bg-teal-50 px-4 py-3 text-sm text-teal-900">
+        {msg || "You have already reviewed this PG. Thank you!"}
+      </p>
     );
   }
 
