@@ -2,12 +2,18 @@ import Link from "next/link";
 import { REGIONS } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function Pill({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
+function Pill({ children, muted, title }: { children: React.ReactNode; muted?: boolean; title?: string }) {
   return (
-    <span className={`rounded-full px-2.5 py-1 ${muted ? "bg-slate-100 text-slate-500" : "bg-teal-50 text-teal-900"}`}>
+    <span title={title} className={`rounded-full px-2.5 py-1 ${muted ? "bg-slate-100 text-slate-500" : "bg-teal-50 text-teal-900"}`}>
       {children}
     </span>
   );
+}
+
+// Approximate, straight-line distance
+function approx(km: number) {
+  if (km < 1) return `~${Math.max(100, Math.round(km * 10) * 100)} m away in a straight line`;
+  return `~${km.toFixed(1)} km away in a straight line`;
 }
 
 export default function PgCard({ pg }: { pg: any }) {
@@ -17,7 +23,7 @@ export default function PgCard({ pg }: { pg: any }) {
     .slice(0, 2)
     .map(([k, v]) => `${v}% ${REGIONS[k as keyof typeof REGIONS]}`)
     .join(", ");
-  const km = pg.distanceKm ?? (pg.distanceM != null ? Math.round(pg.distanceM / 100) / 10 : null);
+  const km: number | null = pg.distanceKm ?? (pg.distanceM != null ? Math.round(pg.distanceM / 100) / 10 : null);
 
   return (
     <Link
@@ -54,16 +60,25 @@ export default function PgCard({ pg }: { pg: any }) {
         <p className="mt-1 line-clamp-1 text-sm text-slate-500">{pg.address}</p>
 
         <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+          {km != null && (
+            <span
+              title="Straight-line distance from your location, not road distance"
+              className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-900"
+            >
+              {approx(km)}
+            </span>
+          )}
           {pg.ratings ? (
             <>
               <Pill>Clean {pg.ratings.cleanliness}/5</Pill>
               <Pill>Food {pg.ratings.food}/5</Pill>
+              <Pill>Value {pg.ratings.value}/5</Pill>
+              <Pill>Ambience {pg.ratings.ambience}/5</Pill>
             </>
           ) : (
             <Pill muted>Rating after 3 verified reviews ({pg.verifiedCount ?? 0}/3)</Pill>
           )}
           {mix && <Pill>{mix}</Pill>}
-          {km != null && <Pill>{km} km away</Pill>}
         </div>
 
         <p className="mt-3 text-xs text-slate-500">

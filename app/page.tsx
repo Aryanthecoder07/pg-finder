@@ -4,7 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import PgCard from "@/components/PgCard";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const NEAR_KM = 10;
+const NEAR_OPTIONS = [2, 5, 10];
+const RATING_SORTS = ["cleanliness", "food", "value", "ambience"];
+const SORTS = [
+  { v: "auto", l: "Recommended" },
+  { v: "nearest", l: "Nearest first" },
+  { v: "cleanliness", l: "Cleanliness" },
+  { v: "food", l: "Food" },
+  { v: "value", l: "Value for money" },
+  { v: "ambience", l: "Ambience" },
+];
 
 const EXAMPLES = [
   "Clean girls PG with South Indian food",
@@ -25,13 +34,18 @@ const STEPS = [
   { n: "3", t: "Visit with confidence", d: "Open the exact pin in Google Maps and go in knowing what to expect." },
 ];
 
+const selectCls =
+  "rounded-full border border-white/30 bg-teal-900 px-3 py-1.5 text-sm text-white focus:outline-none";
+
 type Coords = { lat: number; lng: number };
-type Override = { q?: string; city?: string; near?: boolean };
+type Override = { q?: string; city?: string; near?: boolean; nearKm?: number; sort?: string };
 
 export default function Home() {
   const [q, setQ] = useState("");
   const [city, setCity] = useState("");
   const [near, setNear] = useState(false);
+  const [nearKm, setNearKm] = useState(5);
+  const [sort, setSort] = useState("auto");
   const [coords, setCoords] = useState<Coords | null>(null);
   const [cities, setCities] = useState<{ city: string; count: number }[]>([]);
   const [list, setList] = useState<any[] | null>(null);
@@ -57,18 +71,26 @@ export default function Home() {
     });
   }
 
-  // One function for every combination of search text, city and near-me.
+  // One function for every combination of search text, city, near me, distance and sort.
   async function run(o: Override = {}) {
     if (o.q !== undefined) setQ(o.q);
     if (o.city !== undefined) setCity(o.city);
     if (o.near !== undefined) setNear(o.near);
-    const f = { q: (o.q ?? q).trim(), city: o.city ?? city, near: o.near ?? near };
+    if (o.nearKm !== undefined) setNearKm(o.nearKm);
+    const f = {
+      q: (o.q ?? q).trim(),
+      city: o.city ?? city,
+      near: o.near ?? near,
+      nearKm: o.nearKm ?? nearKm,
+      sort: o.sort ?? sort,
+    };
 
     const id = ++seq.current;
     setLoading(true);
     setNote("");
 
-    let c: Coords | null = null;
+    // Once location has been shared, distances keep showing on cards even when "Near me" is off
+    let c: Coords | null = coords;
     if (f.near) {
       try {
         c = await getCoords();
@@ -78,15 +100,23 @@ export default function Home() {
         setNote(`Could not get your location: ${(e as Error).message}`);
       }
     }
+    if (!f.near && f.sort === "nearest") f.sort = "auto";
+    setSort(f.sort);
+
+    // Keep the filters in the address bar so refresh, Back and shared links restore this view
+    const u = new URLSearchParams();
+    if (f.q) u.set("q", f.q);
+    if (f.city) u.set("city", f.city);
+    if (f.near) { u.set("near", "1"); u.set("km", String(f.nearKm)); }
+    if (f.sort !== "auto") u.set("sort", f.sort);
+    history.replaceState(null, "", u.toString() ? `/?${u}` : "/");
 
     const qs = new URLSearchParams();
     if (f.q) qs.set("q", f.q);
     if (f.city) qs.set("city", f.city);
-    if (f.near && c) {
-      qs.set("lat", String(c.lat));
-      qs.set("lng", String(c.lng));
-      qs.set("km", String(NEAR_KM));
-    }
+    if (c) { qs.set("lat", String(c.lat)); qs.set("lng", String(c.lng)); }
+    if (f.near && c) qs.set("km", String(f.nearKm));
+    if (f.sort !== "auto") qs.set("sort", f.sort);
 
     const res = await fetch(`/api/search?${qs}`);
     if (id !== seq.current) return; // a newer request has started
@@ -97,10 +127,17 @@ export default function Home() {
     }
     setList(await res.json());
 
-    const filtered = !!(f.q || f.city || f.near);
+    const filtered = !!(f.q || f.city || f.near || f.sort !== "auto");
     setActive(filtered);
+    const sortLabel = SORTS.find((s) => s.v === f.sort)?.l ?? "";
     const base = f.q ? `Results for “${f.q}”` : filtered ? "PGs" : "Recently added";
-    setLabel(filtered ? `${base}${f.city ? ` in ${f.city}` : ""}${f.near ? ` within ${NEAR_KM} km of you` : ""}` : base);
+    setLabel(
+      filtered
+        ? `${base}${f.city ? ` in ${f.city}` : ""}${f.near ? ` within ${f.nearKm} km of you` : ""}${
+            f.sort !== "auto" ? `, sorted by ${sortLabel.toLowerCase()}` : ""
+          }`
+        : base
+    );
   }
 
   useEffect(() => {
@@ -111,9 +148,23 @@ export default function Home() {
         if (r.ok) found = await r.json();
       } catch {}
       setCities(found);
+
+      const sp = new URLSearchParams(window.location.search);
+      const hasUrl = ["q", "city", "near", "sort"].some((k) => sp.has(k));
       let saved = "";
       try { saved = localStorage.getItem("pg_city") ?? ""; } catch {}
-      await run({ city: found.some((c) => c.city === saved) ? saved : "" });
+      const savedOk = found.some((c) => c.city === saved) ? saved : "";
+      const kmParam = Number(sp.get("km"));
+      const sortParam = sp.get("sort") ?? "auto";
+
+      // The address bar wins; otherwise fall back to the remembered city
+      await run({
+        q: sp.get("q") ?? "",
+        city: hasUrl ? sp.get("city") ?? "" : savedOk,
+        near: sp.get("near") === "1",
+        nearKm: NEAR_OPTIONS.includes(kmParam) ? kmParam : 5,
+        sort: SORTS.some((s) => s.v === sortParam) ? sortParam : "auto",
+      });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -125,7 +176,7 @@ export default function Home() {
 
   function clearAll() {
     try { localStorage.removeItem("pg_city"); } catch {}
-    run({ q: "", city: "", near: false });
+    run({ q: "", city: "", near: false, sort: "auto" });
   }
 
   const selectedMissing = city && !cities.some((c) => c.city === city);
@@ -165,14 +216,9 @@ export default function Home() {
           </button>
         </form>
 
-        {/* Filters: city + near me. They combine with the search text. */}
+        {/* Filters: city, near me, distance and sort. They combine with the search text. */}
         <div className="relative mt-4 flex max-w-2xl flex-wrap items-center gap-2">
-          <select
-            value={city}
-            onChange={(e) => chooseCity(e.target.value)}
-            aria-label="City"
-            className="rounded-full border border-white/30 bg-teal-900 px-3 py-1.5 text-sm text-white focus:outline-none"
-          >
+          <select value={city} onChange={(e) => chooseCity(e.target.value)} aria-label="City" className={selectCls}>
             <option value="" className="bg-white text-slate-900">All cities</option>
             {selectedMissing && <option value={city} className="bg-white text-slate-900">{city}</option>}
             {cities.map((c) => (
@@ -190,8 +236,27 @@ export default function Home() {
               near ? "bg-amber-300 text-teal-950" : "border border-white/30 text-white hover:bg-white/10"
             }`}
           >
-            {near ? `Near me · ${NEAR_KM} km ✓` : "Near me"}
+            {near ? "Near me ✓" : "Near me"}
           </button>
+
+          {near && (
+            <select
+              value={nearKm}
+              onChange={(e) => run({ nearKm: Number(e.target.value) })}
+              aria-label="Distance"
+              className={selectCls}
+            >
+              {NEAR_OPTIONS.map((k) => (
+                <option key={k} value={k} className="bg-white text-slate-900">Within {k} km</option>
+              ))}
+            </select>
+          )}
+
+          <select value={sort} onChange={(e) => run({ sort: e.target.value })} aria-label="Sort by" className={selectCls}>
+            {SORTS.filter((s) => s.v !== "nearest" || near).map((s) => (
+              <option key={s.v} value={s.v} className="bg-white text-slate-900">Sort: {s.l}</option>
+            ))}
+          </select>
 
           {active && (
             <button type="button" onClick={clearAll} className="px-2 py-1.5 text-sm text-teal-100/80 underline underline-offset-4">
@@ -199,6 +264,12 @@ export default function Home() {
             </button>
           )}
         </div>
+
+        {RATING_SORTS.includes(sort) && (
+          <p className="relative mt-2 max-w-2xl text-xs text-teal-100/80">
+            Rating sorts use on-site verified reviews. PGs without 3 verified reviews are listed last.
+          </p>
+        )}
 
         <div className="relative mt-4 flex max-w-2xl flex-wrap items-center gap-2">
           {EXAMPLES.map((ex) => (
@@ -245,7 +316,7 @@ export default function Home() {
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
             <p className="font-display text-lg font-semibold">{active ? "No matches yet" : "No PGs added yet"}</p>
             <p className="mt-1 text-sm text-slate-600">
-              {active ? "Try a different city, or turn off “Near me”. Or add the PG you live in." : "Be the first to add the PG you live in."}
+              {active ? "Try a different city, a wider distance, or turn off “Near me”. Or add the PG you live in." : "Be the first to add the PG you live in."}
             </p>
             <Link href="/add" className="btn mt-4 inline-block">Add your PG</Link>
           </div>

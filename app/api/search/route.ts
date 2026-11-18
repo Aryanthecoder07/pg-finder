@@ -6,7 +6,11 @@ import { haversineM } from "@/lib/geo";
 
 const PUBLIC = { embedding: 0 };
 
-// GET /api/search?q=&city=&lat=&lng=&km=
+// Rating sorts use verified-only ratings. Change to "ratingsAll" to rank by every review, including unverified.
+const RATING_FIELD = "ratings";
+const RATING_KEYS = ["cleanliness", "food", "value", "ambience"];
+
+// GET /api/search?q=&city=&lat=&lng=&km=&sort=
 // Every parameter is optional. Whatever is given is combined as an intersection.
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
@@ -18,8 +22,13 @@ export async function GET(req: NextRequest) {
   const hasPos = Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0);
   const near = hasPos && km > 0;
   const cityFilter = city ? { city } : {};
-  const pgs = (await db()).collection("pgs");
 
+  const sortParam = p.get("sort") ?? "";
+  const ratingKey = RATING_KEYS.includes(sortParam) ? sortParam : null;
+  const sortField = ratingKey ? `${RATING_FIELD}.${ratingKey}` : "";
+  const rating = (x: any): number => x[RATING_FIELD]?.[ratingKey as string] ?? -1; // no rating yet = last
+
+  const pgs = (await db()).collection("pgs");
   let docs: any[];
 
   if (q) {
@@ -38,8 +47,9 @@ export async function GET(req: NextRequest) {
             index: "pg_vector",
             path: "embedding",
             queryVector,
-            numCandidates: near ? 500 : 150,
-            limit: near ? 100 : 12, // wider pool when we still have to filter by distance afterwards
+            // Wider pool when we still have to filter by distance or re-sort by rating afterwards
+            numCandidates: near ? 500 : ratingKey ? 200 : 150,
+            limit: near ? 100 : ratingKey ? 40 : 12,
             ...(city ? { filter: { city: { $eq: city } } } : {}),
           },
         },
@@ -48,7 +58,7 @@ export async function GET(req: NextRequest) {
       ])
       .toArray();
   } else if (near) {
-    // No text: everything within range, nearest first, optionally limited to a city
+    // No text: everything within range, optionally limited to a city. Nearest first unless a rating sort is chosen.
     docs = await pgs
       .aggregate([
         {
@@ -61,15 +71,20 @@ export async function GET(req: NextRequest) {
           },
         },
         { $project: PUBLIC },
+        { $sort: ratingKey ? { [sortField]: -1, distanceM: 1 } : { distanceM: 1 } },
         { $limit: 30 },
       ])
       .toArray();
   } else {
-    // No text, no location: newest first, optionally limited to a city
-    docs = await pgs.find(cityFilter, { projection: PUBLIC }).sort({ createdAt: -1 }).limit(30).toArray();
+    // No text, no distance limit: newest first unless a rating sort is chosen
+    docs = await pgs
+      .find(cityFilter, { projection: PUBLIC })
+      .sort(ratingKey ? { [sortField]: -1, createdAt: -1 } : { createdAt: -1 })
+      .limit(30)
+      .toArray();
   }
 
-  let out = docs.map((x) => ({
+  let out: any[] = docs.map((x) => ({
     ...x,
     _id: String(x._id),
     distanceKm: hasPos
@@ -77,12 +92,15 @@ export async function GET(req: NextRequest) {
       : null,
   }));
 
-  // Text + near me: keep only matches within range, nearest first
-  if (q && near) {
-    out = out
-      .filter((x) => x.distanceKm != null && x.distanceKm <= km)
-      .sort((a, b) => (a.distanceKm as number) - (b.distanceKm as number))
-      .slice(0, 12);
+  // Text search: apply the distance limit and the chosen order to the best matches
+  if (q) {
+    if (near) out = out.filter((x) => x.distanceKm != null && x.distanceKm <= km);
+    if (ratingKey) {
+      out.sort((a, b) => rating(b) - rating(a) || (near ? a.distanceKm - b.distanceKm : (b.score ?? 0) - (a.score ?? 0)));
+    } else if (near) {
+      out.sort((a, b) => a.distanceKm - b.distanceKm);
+    }
+    out = out.slice(0, 12);
   }
 
   return NextResponse.json(out);
